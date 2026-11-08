@@ -1,3 +1,4 @@
+print(2)
 task.wait(3)
 
 local player = game.Players.LocalPlayer
