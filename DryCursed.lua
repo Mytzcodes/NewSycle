@@ -1,7 +1,3 @@
---!strict
--- GentaHax.lua
--- Target: Grow a Garden (Roblox) | ByteNet / Shared.Net Architecture
--- Luau Client Environment
 
 -- ══════════════════════════════════════════════════════════════════
 -- DAFTAR FUNGSI CEPAT
