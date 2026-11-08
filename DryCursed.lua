@@ -48,13 +48,6 @@ local TILE_OFF = 0.5
 -- POS: POSISI & KONVERSI KOORDINAT
 -- ══════════════════════════════════════════════════════════════════
 
-local function getPosRaw()
-	local char = LP and LP.Character
-	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-	if hrp then return hrp.Position end
-	return Vector3.zero
-end
-
 local function tileFromWorld(wx, wy)
 	return {
 		x = math.floor(wx / TILE_SZ + 0.5),
@@ -65,6 +58,53 @@ end
 local function worldFromTile(tx, ty)
 	return Vector3.new(tx * TILE_SZ + TILE_OFF, ty * TILE_SZ + TILE_OFF, 0)
 end
+
+local function getPosRaw()
+	local char = LP and LP.Character
+
+	-- 1. Cek jika karakter tidak terhubung ke LP.Character, cari di Workspace berdasarkan nama/UserId
+	if not char then
+		char = workspace:FindFirstChild(LP.Name)
+			or (workspace:FindFirstChild("Players") and workspace.Players:FindFirstChild(LP.Name))
+			or (workspace:FindFirstChild("Characters") and workspace.Characters:FindFirstChild(LP.Name))
+	end
+
+	-- 2. Cari bagian utama dari karakter (HumanoidRootPart -> PrimaryPart -> Head/Torso -> BasePart apapun)
+	if char then
+		local root = char:FindFirstChild("HumanoidRootPart")
+			or char.PrimaryPart
+			or char:FindFirstChild("RootPart")
+			or char:FindFirstChild("Torso")
+			or char:FindFirstChild("UpperTorso")
+			or char:FindFirstChild("Head")
+			or char:FindFirstChildWhichIsA("BasePart", true)
+
+		if root then
+			return root.Position
+		end
+
+		-- Jika berupa Model tanpa HumanoidRootPart, ambil titik tengah Pivot-nya
+		if char:IsA("Model") then
+			return char:GetPivot().Position
+		end
+	end
+
+	-- 3. Fallback terakhir: jika karakter murni 2D/UI atau kamera mengunci player, ambil dari Camera
+	local cam = workspace.CurrentCamera
+	if cam and cam.CameraSubject then
+		local subj = cam.CameraSubject
+		if subj:IsA("Humanoid") and subj.Parent then
+			return subj.Parent:GetPivot().Position
+		elseif subj:IsA("BasePart") then
+			return subj.Position
+		elseif subj:IsA("Model") then
+			return subj:GetPivot().Position
+		end
+	end
+
+	return Vector3.zero
+end
+
 
 local function getPos()
 	local raw = getPosRaw()
