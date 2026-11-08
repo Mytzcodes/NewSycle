@@ -1,4 +1,3 @@
-
 -- ══════════════════════════════════════════════════════════════════
 -- DAFTAR FUNGSI CEPAT
 -- ══════════════════════════════════════════════════════════════════
@@ -30,14 +29,14 @@
 --
 -- ══════════════════════════════════════════════════════════════════
 
-local RS      = game:GetService("ReplicatedStorage")
-local RunSvc  = game:GetService("RunService")
-local Players = game:GetService("Players")
+local RS       = game:GetService("ReplicatedStorage")
+local RunSvc   = game:GetService("RunService")
+local Players  = game:GetService("Players")
 local TweenSvc = game:GetService("TweenService")
-local LP      = Players.LocalPlayer
+local LP       = Players.LocalPlayer
 
 -- ─── NET RESOLVER ─────────────────────────────────────────────────
-local function getNet(): any
+local function getNet()
 	return require(RS:WaitForChild("Shared"):WaitForChild("Net"))
 end
 
@@ -49,25 +48,25 @@ local TILE_OFF = 0.5
 -- POS: POSISI & KONVERSI KOORDINAT
 -- ══════════════════════════════════════════════════════════════════
 
-local function getPosRaw(): Vector3
+local function getPosRaw()
 	local char = LP and LP.Character
-	local hrp  = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart")
 	if hrp then return hrp.Position end
 	return Vector3.zero
 end
 
-local function tileFromWorld(wx: number, wy: number): { x: number, y: number }
+local function tileFromWorld(wx, wy)
 	return {
 		x = math.floor(wx / TILE_SZ + 0.5),
 		y = math.floor(wy / TILE_SZ + 0.5),
 	}
 end
 
-local function worldFromTile(tx: number, ty: number): Vector3
+local function worldFromTile(tx, ty)
 	return Vector3.new(tx * TILE_SZ + TILE_OFF, ty * TILE_SZ + TILE_OFF, 0)
 end
 
-local function getPos(): { x: number, y: number }
+local function getPos()
 	local raw = getPosRaw()
 	return tileFromWorld(raw.X, raw.Y)
 end
@@ -76,7 +75,7 @@ end
 -- TILE ACTIONS
 -- ══════════════════════════════════════════════════════════════════
 
-local function place(x: number, y: number, itemId: number, layer: number?)
+local function place(x, y, itemId, layer)
 	getNet().tile.send({
 		layer = layer or 1,
 		x     = x,
@@ -86,12 +85,12 @@ local function place(x: number, y: number, itemId: number, layer: number?)
 	})
 end
 
-local function placeRel(dx: number, dy: number, itemId: number, layer: number?)
+local function placeRel(dx, dy, itemId, layer)
 	local p = getPos()
 	place(p.x + dx, p.y + dy, itemId, layer)
 end
 
-local function break_(x: number, y: number)
+local function break_(x, y)
 	getNet().act.send({
 		kind = 6,
 		x    = x + TILE_OFF,
@@ -99,12 +98,12 @@ local function break_(x: number, y: number)
 	})
 end
 
-local function breakRel(dx: number, dy: number)
+local function breakRel(dx, dy)
 	local p = getPos()
 	break_(p.x + dx, p.y + dy)
 end
 
-local function wrench(x: number, y: number)
+local function wrench(x, y)
 	getNet().act.send({
 		kind = 1,
 		x    = x + TILE_OFF,
@@ -112,11 +111,11 @@ local function wrench(x: number, y: number)
 	})
 end
 
-local function harvest(x: number, y: number)
+local function harvest(x, y)
 	getNet().harvest.send({ x = x, y = y })
 end
 
-local function toggle(x: number, y: number, layer: number?)
+local function toggle(x, y, layer)
 	getNet().toggle.send({
 		layer = layer or 1,
 		x     = x,
@@ -128,21 +127,21 @@ end
 -- WORLD & INVENTORY
 -- ══════════════════════════════════════════════════════════════════
 
-local function warp(worldName: string)
+local function warp(worldName)
 	local name = string.upper(string.gsub(worldName, "%s+", ""))
 	getNet().tile.send({
 		layer = 0, x = 0, y = 0, id = 0, flip = false, warp = name,
 	})
 end
 
-local function drop(itemId: number, count: number?)
+local function drop(itemId, count)
 	getNet().drop.send({
 		id    = itemId,
 		count = math.max(1, count or 1),
 	})
 end
 
-local function equip(itemId: number)
+local function equip(itemId)
 	getNet().wear.send({ hand = itemId, hat = nil })
 end
 
@@ -150,9 +149,9 @@ end
 -- INTERNAL SCHEDULER
 -- ══════════════════════════════════════════════════════════════════
 
-local _tasks: { [string]: RBXScriptConnection } = {}
+local _tasks = {}
 
-local function startLoop(name: string, intervalSec: number, fn: () -> ())
+local function startLoop(name, intervalSec, fn)
 	if _tasks[name] then _tasks[name]:Disconnect() end
 	local last = 0
 	_tasks[name] = RunSvc.Heartbeat:Connect(function()
@@ -165,7 +164,7 @@ local function startLoop(name: string, intervalSec: number, fn: () -> ())
 	end)
 end
 
-local function stopLoop(name: string)
+local function stopLoop(name)
 	if _tasks[name] then
 		_tasks[name]:Disconnect()
 		_tasks[name] = nil
@@ -176,12 +175,12 @@ end
 -- PNB: PLACE AND BREAK LOOP
 -- ══════════════════════════════════════════════════════════════════
 
-local function pnb(itemId: number, dx: number?, dy: number?, hits: number?, ms: number?)
-	local offX    = dx or 0
-	local offY    = dy or 1
-	local hitsReq = hits or 3
-	local iv      = (ms or 160) / 1000
-	local stage   = "PLACE"
+local function pnb(itemId, dx, dy, hits, ms)
+	local offX     = dx or 0
+	local offY     = dy or 1
+	local hitsReq  = hits or 3
+	local iv       = (ms or 160) / 1000
+	local stage    = "PLACE"
 	local hitCount = 0
 	startLoop("pnb", iv, function()
 		if stage == "PLACE" then
@@ -204,19 +203,13 @@ end
 -- FARM AREA
 -- ══════════════════════════════════════════════════════════════════
 
-local function farmArea(
-	itemId: number,
-	x1: number, y1: number,
-	x2: number, y2: number,
-	hits: number?,
-	ms: number?
-)
+local function farmArea(itemId, x1, y1, x2, y2, hits, ms)
 	local hitsReq = hits or 3
 	local iv      = (ms or 160) / 1000
-	local xs, xe  = math.min(x1,x2), math.max(x1,x2)
-	local ys, ye  = math.min(y1,y2), math.max(y1,y2)
+	local xs, xe  = math.min(x1, x2), math.max(x1, x2)
+	local ys, ye  = math.min(y1, y2), math.max(y1, y2)
 
-	local tiles: { { x: number, y: number } } = {}
+	local tiles = {}
 	for ty = ys, ye do
 		for tx = xs, xe do
 			table.insert(tiles, { x = tx, y = ty })
@@ -257,54 +250,49 @@ end
 -- ══════════════════════════════════════════════════════════════════
 -- GUI VISUAL — HUMANOID PART BILLBOARD
 -- ══════════════════════════════════════════════════════════════════
--- BillboardGui di atas kepala karakter, menampilkan:
---   · Nama player
---   · Posisi tile (X, Y) realtime
---   · Status task aktif (PNB / FARM / IDLE)
---   · Tombol toggle GUI (minimize / restore)
---   · Panel kontrol PNB dan Farm langsung di head
--- ══════════════════════════════════════════════════════════════════
 
-local GUI_TAG  = "GH_HeadGui"
-local ACCENT   = Color3.fromRGB(94, 234, 212)   -- teal
-local BG_DARK  = Color3.fromRGB(10,  12,  20)
-local BG_PANEL = Color3.fromRGB(15,  18,  30)
-local TEXT_COL = Color3.fromRGB(220, 230, 255)
-local RED_COL  = Color3.fromRGB(255, 80,  80)
-local GREEN_COL= Color3.fromRGB(80,  255, 140)
-local GRAY_COL = Color3.fromRGB(100, 110, 140)
+local GUI_TAG   = "GH_HeadGui"
+local ACCENT    = Color3.fromRGB(94, 234, 212)   -- teal
+local BG_DARK   = Color3.fromRGB(10,  12,  20)
+local BG_PANEL  = Color3.fromRGB(15,  18,  30)
+local TEXT_COL  = Color3.fromRGB(220, 230, 255)
+local RED_COL   = Color3.fromRGB(255, 80,  80)
+local GREEN_COL = Color3.fromRGB(80,  255, 140)
+local GRAY_COL  = Color3.fromRGB(100, 110, 140)
+
+local _hbConn = nil
+local _charConn = nil
 
 -- Helper: buat instance dengan properti sekaligus
-local function mk<T>(cls: string, props: { [string]: any }, parent: Instance?): T
+local function mk(cls, props, parent)
 	local inst = Instance.new(cls)
 	for k, v in pairs(props) do
-		(inst :: any)[k] = v
+		inst[k] = v
 	end
 	if parent then inst.Parent = parent end
-	return inst :: any
+	return inst
 end
 
 -- Helper: button dengan hover effect
-local function mkBtn(label: string, pos: UDim2, size: UDim2, col: Color3, parent: Instance): TextButton
+local function mkBtn(label, pos, size, col, parent)
 	local btn = mk("TextButton", {
-		Name            = label,
-		Text            = label,
-		Position        = pos,
-		Size            = size,
+		Name             = label,
+		Text             = label,
+		Position         = pos,
+		Size             = size,
 		BackgroundColor3 = col,
-		TextColor3      = Color3.fromRGB(10, 10, 10),
-		TextScaled      = true,
-		Font            = Enum.Font.GothamBold,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-	}, parent) :: TextButton
+		TextColor3       = Color3.fromRGB(10, 10, 10),
+		TextScaled       = true,
+		Font             = Enum.Font.GothamBold,
+		BorderSizePixel  = 0,
+		AutoButtonColor  = false,
+	}, parent)
 
-	local corner = mk("UICorner", { CornerRadius = UDim.new(0, 6) }, btn)
-	_ = corner
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, btn)
 
 	btn.MouseEnter:Connect(function()
 		TweenSvc:Create(btn, TweenInfo.new(0.12), {
-			BackgroundColor3 = col:Lerp(Color3.new(1,1,1), 0.18),
+			BackgroundColor3 = col:Lerp(Color3.new(1, 1, 1), 0.18),
 		}):Play()
 	end)
 	btn.MouseLeave:Connect(function()
@@ -317,109 +305,115 @@ local function mkBtn(label: string, pos: UDim2, size: UDim2, col: Color3, parent
 end
 
 local function buildGui()
+	-- Putus koneksi lama agar tidak menumpuk saat respawn
+	if _hbConn then _hbConn:Disconnect() _hbConn = nil end
+
 	-- Hapus GUI lama jika ada
 	local existing = LP.PlayerGui:FindFirstChild(GUI_TAG)
 	if existing then existing:Destroy() end
 
 	-- ── BILLBOARD DI ATAS KEPALA ────────────────────────────────
 	local char = LP.Character or LP.CharacterAdded:Wait()
-	local head = char:WaitForChild("Head") :: BasePart
+	local head = char:WaitForChild("Head")
+
+	local oldBb = head:FindFirstChild(GUI_TAG .. "_BB")
+	if oldBb then oldBb:Destroy() end
 
 	local bb = mk("BillboardGui", {
-		Name           = GUI_TAG .. "_BB",
-		Adornee        = head,
-		Size           = UDim2.fromOffset(220, 90),
-		StudsOffset    = Vector3.new(0, 2.8, 0),
-		AlwaysOnTop    = true,
-		ResetOnSpawn   = false,
-		Active         = true,
-	}, head) :: BillboardGui
+		Name         = GUI_TAG .. "_BB",
+		Adornee      = head,
+		Size         = UDim2.fromOffset(220, 90),
+		StudsOffset  = Vector3.new(0, 2.8, 0),
+		AlwaysOnTop  = true,
+		ResetOnSpawn = false,
+		Active       = true,
+	}, head)
 
 	-- Background billboard
 	local bbBg = mk("Frame", {
-		Size            = UDim2.fromScale(1, 1),
-		BackgroundColor3 = BG_DARK,
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundColor3       = BG_DARK,
 		BackgroundTransparency = 0.15,
-		BorderSizePixel = 0,
-	}, bb) :: Frame
+		BorderSizePixel        = 0,
+	}, bb)
 	mk("UICorner", { CornerRadius = UDim.new(0, 10) }, bbBg)
 	mk("UIStroke", {
-		Color     = ACCENT,
-		Thickness = 1.4,
+		Color        = ACCENT,
+		Thickness    = 1.4,
 		Transparency = 0.3,
 	}, bbBg)
 
 	-- Label nama
-	local nameLabel = mk("TextLabel", {
-		Name       = "NameLabel",
-		Text       = "⟐ " .. LP.Name,
-		Size       = UDim2.new(1, 0, 0, 22),
-		Position   = UDim2.fromOffset(0, 4),
+	mk("TextLabel", {
+		Name                   = "NameLabel",
+		Text                   = "⟐ " .. LP.Name,
+		Size                   = UDim2.new(1, 0, 0, 22),
+		Position               = UDim2.fromOffset(0, 4),
 		BackgroundTransparency = 1,
-		TextColor3 = ACCENT,
-		TextScaled = true,
-		Font       = Enum.Font.GothamBold,
-		TextXAlignment = Enum.TextXAlignment.Center,
-	}, bbBg) :: TextLabel
+		TextColor3             = ACCENT,
+		TextScaled             = true,
+		Font                   = Enum.Font.GothamBold,
+		TextXAlignment         = Enum.TextXAlignment.Center,
+	}, bbBg)
 
 	-- Label posisi
 	local posLabel = mk("TextLabel", {
-		Name       = "PosLabel",
-		Text       = "Tile: (0, 0)",
-		Size       = UDim2.new(1, -10, 0, 18),
-		Position   = UDim2.new(0, 5, 0, 28),
+		Name                   = "PosLabel",
+		Text                   = "Tile: (0, 0)",
+		Size                   = UDim2.new(1, -10, 0, 18),
+		Position               = UDim2.new(0, 5, 0, 28),
 		BackgroundTransparency = 1,
-		TextColor3 = TEXT_COL,
-		TextScaled = true,
-		Font       = Enum.Font.Gotham,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, bbBg) :: TextLabel
+		TextColor3             = TEXT_COL,
+		TextScaled             = true,
+		Font                   = Enum.Font.Gotham,
+		TextXAlignment         = Enum.TextXAlignment.Left,
+	}, bbBg)
 
 	-- Label status
 	local statusLabel = mk("TextLabel", {
-		Name       = "StatusLabel",
-		Text       = "● IDLE",
-		Size       = UDim2.new(1, -10, 0, 18),
-		Position   = UDim2.new(0, 5, 0, 48),
+		Name                   = "StatusLabel",
+		Text                   = "● IDLE",
+		Size                   = UDim2.new(1, -10, 0, 18),
+		Position               = UDim2.new(0, 5, 0, 48),
 		BackgroundTransparency = 1,
-		TextColor3 = GRAY_COL,
-		TextScaled = true,
-		Font       = Enum.Font.GothamBold,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, bbBg) :: TextLabel
+		TextColor3             = GRAY_COL,
+		TextScaled             = true,
+		Font                   = Enum.Font.GothamBold,
+		TextXAlignment         = Enum.TextXAlignment.Left,
+	}, bbBg)
 
 	-- Tombol minimize billboard
 	local minBtn = mk("TextButton", {
-		Name       = "MinBtn",
-		Text       = "−",
-		Size       = UDim2.fromOffset(20, 20),
-		Position   = UDim2.new(1, -24, 0, 2),
-		BackgroundColor3 = Color3.fromRGB(40,40,60),
-		TextColor3 = TEXT_COL,
-		TextScaled = true,
-		Font       = Enum.Font.GothamBold,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-	}, bbBg) :: TextButton
+		Name             = "MinBtn",
+		Text             = "−",
+		Size             = UDim2.fromOffset(20, 20),
+		Position         = UDim2.new(1, -24, 0, 2),
+		BackgroundColor3 = Color3.fromRGB(40, 40, 60),
+		TextColor3       = TEXT_COL,
+		TextScaled       = true,
+		Font             = Enum.Font.GothamBold,
+		BorderSizePixel  = 0,
+		AutoButtonColor  = false,
+	}, bbBg)
 	mk("UICorner", { CornerRadius = UDim.new(0, 5) }, minBtn)
 
 	-- ── PANEL KONTROL UTAMA (ScreenGui) ─────────────────────────
 	local sg = mk("ScreenGui", {
-		Name          = GUI_TAG,
-		ResetOnSpawn  = false,
+		Name           = GUI_TAG,
+		ResetOnSpawn   = false,
 		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
-	}, LP.PlayerGui) :: ScreenGui
+	}, LP.PlayerGui)
 
 	-- Frame utama — draggable
 	local mainFrame = mk("Frame", {
-		Name            = "Main",
-		Size            = UDim2.fromOffset(300, 310),
-		Position        = UDim2.fromOffset(20, 60),
+		Name             = "Main",
+		Size             = UDim2.fromOffset(300, 310),
+		Position         = UDim2.fromOffset(20, 60),
 		BackgroundColor3 = BG_DARK,
-		BorderSizePixel = 0,
-		Active          = true,
-		Draggable       = true,
-	}, sg) :: Frame
+		BorderSizePixel  = 0,
+		Active           = true,
+		Draggable        = true,
+	}, sg)
 	mk("UICorner", { CornerRadius = UDim.new(0, 12) }, mainFrame)
 	mk("UIStroke", {
 		Color = ACCENT, Thickness = 1.5, Transparency = 0.2,
@@ -427,240 +421,264 @@ local function buildGui()
 
 	-- Topbar
 	local topbar = mk("Frame", {
-		Name            = "Topbar",
-		Size            = UDim2.new(1, 0, 0, 36),
+		Name             = "Topbar",
+		Size             = UDim2.new(1, 0, 0, 36),
 		BackgroundColor3 = Color3.fromRGB(20, 24, 42),
-		BorderSizePixel = 0,
-	}, mainFrame) :: Frame
+		BorderSizePixel  = 0,
+	}, mainFrame)
 	mk("UICorner", { CornerRadius = UDim.new(0, 12) }, topbar)
 
 	mk("TextLabel", {
-		Text       = "⟐  GentaHax",
-		Size       = UDim2.new(1, -50, 1, 0),
-		Position   = UDim2.fromOffset(12, 0),
+		Text                   = "⟐  GentaHax",
+		Size                   = UDim2.new(1, -50, 1, 0),
+		Position               = UDim2.fromOffset(12, 0),
 		BackgroundTransparency = 1,
-		TextColor3 = ACCENT,
-		Font       = Enum.Font.GothamBold,
-		TextScaled = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3             = ACCENT,
+		Font                   = Enum.Font.GothamBold,
+		TextScaled             = true,
+		TextXAlignment         = Enum.TextXAlignment.Left,
 	}, topbar)
 
 	-- Tombol close
 	local closeBtn = mk("TextButton", {
-		Text       = "✕",
-		Size       = UDim2.fromOffset(28, 28),
-		Position   = UDim2.new(1, -34, 0, 4),
+		Text             = "✕",
+		Size             = UDim2.fromOffset(28, 28),
+		Position         = UDim2.new(1, -34, 0, 4),
 		BackgroundColor3 = Color3.fromRGB(200, 50, 50),
-		TextColor3 = Color3.new(1,1,1),
-		Font       = Enum.Font.GothamBold,
-		TextScaled = true,
-		BorderSizePixel = 0,
-		AutoButtonColor = false,
-	}, topbar) :: TextButton
+		TextColor3       = Color3.new(1, 1, 1),
+		Font             = Enum.Font.GothamBold,
+		TextScaled       = true,
+		BorderSizePixel  = 0,
+		AutoButtonColor  = false,
+	}, topbar)
 	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, closeBtn)
 
 	-- Content area
 	local content = mk("Frame", {
-		Name            = "Content",
-		Size            = UDim2.new(1, -16, 1, -44),
-		Position        = UDim2.fromOffset(8, 40),
+		Name                   = "Content",
+		Size                   = UDim2.new(1, -16, 1, -44),
+		Position               = UDim2.fromOffset(8, 40),
 		BackgroundTransparency = 1,
-		BorderSizePixel = 0,
-	}, mainFrame) :: Frame
+		BorderSizePixel        = 0,
+	}, mainFrame)
 	mk("UIListLayout", {
-		Padding         = UDim.new(0, 8),
-		FillDirection   = Enum.FillDirection.Vertical,
-		SortOrder       = Enum.SortOrder.LayoutOrder,
+		Padding       = UDim.new(0, 8),
+		FillDirection = Enum.FillDirection.Vertical,
+		SortOrder     = Enum.SortOrder.LayoutOrder,
 	}, content)
 
 	-- ── SECTION: INFO REALTIME ───────────────────────────────────
 	local infoPanel = mk("Frame", {
-		Name            = "InfoPanel",
-		Size            = UDim2.new(1, 0, 0, 56),
+		Name             = "InfoPanel",
+		Size             = UDim2.new(1, 0, 0, 56),
 		BackgroundColor3 = BG_PANEL,
-		BorderSizePixel = 0,
-		LayoutOrder     = 1,
-	}, content) :: Frame
+		BorderSizePixel  = 0,
+		LayoutOrder      = 1,
+	}, content)
 	mk("UICorner", { CornerRadius = UDim.new(0, 8) }, infoPanel)
 
 	local infoPosLabel = mk("TextLabel", {
-		Name       = "PosRT",
-		Text       = "Tile  X: 0   Y: 0",
-		Size       = UDim2.new(1, -10, 0, 22),
-		Position   = UDim2.fromOffset(8, 4),
+		Name                   = "PosRT",
+		Text                   = "Tile  X: 0   Y: 0",
+		Size                   = UDim2.new(1, -10, 0, 22),
+		Position               = UDim2.fromOffset(8, 4),
 		BackgroundTransparency = 1,
-		TextColor3 = TEXT_COL,
-		Font       = Enum.Font.GothamMono,
-		TextScaled = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, infoPanel) :: TextLabel
+		TextColor3             = TEXT_COL,
+		Font                   = Enum.Font.GothamMono,
+		TextScaled             = true,
+		TextXAlignment         = Enum.TextXAlignment.Left,
+	}, infoPanel)
 
 	local infoStatusLabel = mk("TextLabel", {
-		Name       = "StatusRT",
-		Text       = "Status: IDLE",
-		Size       = UDim2.new(1, -10, 0, 22),
-		Position   = UDim2.new(0, 8, 0, 28),
+		Name                   = "StatusRT",
+		Text                   = "Status: IDLE",
+		Size                   = UDim2.new(1, -10, 0, 22),
+		Position               = UDim2.new(0, 8, 0, 28),
 		BackgroundTransparency = 1,
-		TextColor3 = GRAY_COL,
-		Font       = Enum.Font.Gotham,
-		TextScaled = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
-	}, infoPanel) :: TextLabel
+		TextColor3             = GRAY_COL,
+		Font                   = Enum.Font.Gotham,
+		TextScaled             = true,
+		TextXAlignment         = Enum.TextXAlignment.Left,
+	}, infoPanel)
 
 	-- ── SECTION: PNB ────────────────────────────────────────────
 	local pnbPanel = mk("Frame", {
-		Name            = "PNBPanel",
-		Size            = UDim2.new(1, 0, 0, 100),
+		Name             = "PNBPanel",
+		Size             = UDim2.new(1, 0, 0, 100),
 		BackgroundColor3 = BG_PANEL,
-		BorderSizePixel = 0,
-		LayoutOrder     = 2,
-	}, content) :: Frame
+		BorderSizePixel  = 0,
+		LayoutOrder      = 2,
+	}, content)
 	mk("UICorner", { CornerRadius = UDim.new(0, 8) }, pnbPanel)
 
 	mk("TextLabel", {
-		Text       = "PNB — Place & Break",
-		Size       = UDim2.new(1, -10, 0, 20),
-		Position   = UDim2.fromOffset(8, 4),
+		Text                   = "PNB — Place & Break",
+		Size                   = UDim2.new(1, -10, 0, 20),
+		Position               = UDim2.fromOffset(8, 4),
 		BackgroundTransparency = 1,
-		TextColor3 = ACCENT,
-		Font       = Enum.Font.GothamBold,
-		TextScaled = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3             = ACCENT,
+		Font                   = Enum.Font.GothamBold,
+		TextScaled             = true,
+		TextXAlignment         = Enum.TextXAlignment.Left,
 	}, pnbPanel)
 
 	-- Input ItemID
 	local pnbItemBox = mk("TextBox", {
-		Name            = "ItemID",
-		PlaceholderText = "Item ID",
-		Text            = "",
-		Size            = UDim2.fromOffset(80, 24),
-		Position        = UDim2.fromOffset(8, 28),
-		BackgroundColor3 = Color3.fromRGB(25, 28, 48),
-		TextColor3      = TEXT_COL,
+		Name              = "ItemID",
+		PlaceholderText   = "Item ID",
+		Text              = "",
+		Size              = UDim2.fromOffset(80, 24),
+		Position          = UDim2.fromOffset(8, 28),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
 		PlaceholderColor3 = GRAY_COL,
-		Font            = Enum.Font.GothamMono,
-		TextScaled      = true,
-		BorderSizePixel = 0,
-		ClearTextOnFocus = false,
-	}, pnbPanel) :: TextBox
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, pnbPanel)
 	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, pnbItemBox)
 
 	-- Input Hits
 	local pnbHitsBox = mk("TextBox", {
-		Name            = "Hits",
-		PlaceholderText = "Hits",
-		Text            = "3",
-		Size            = UDim2.fromOffset(55, 24),
-		Position        = UDim2.fromOffset(96, 28),
-		BackgroundColor3 = Color3.fromRGB(25, 28, 48),
-		TextColor3      = TEXT_COL,
+		Name              = "Hits",
+		PlaceholderText   = "Hits",
+		Text              = "3",
+		Size              = UDim2.fromOffset(55, 24),
+		Position          = UDim2.fromOffset(96, 28),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
 		PlaceholderColor3 = GRAY_COL,
-		Font            = Enum.Font.GothamMono,
-		TextScaled      = true,
-		BorderSizePixel = 0,
-		ClearTextOnFocus = false,
-	}, pnbPanel) :: TextBox
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, pnbPanel)
 	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, pnbHitsBox)
 
 	-- Input Delay
 	local pnbMsBox = mk("TextBox", {
-		Name            = "Ms",
-		PlaceholderText = "ms",
-		Text            = "160",
-		Size            = UDim2.fromOffset(55, 24),
-		Position        = UDim2.fromOffset(159, 28),
-		BackgroundColor3 = Color3.fromRGB(25, 28, 48),
-		TextColor3      = TEXT_COL,
+		Name              = "Ms",
+		PlaceholderText   = "ms",
+		Text              = "160",
+		Size              = UDim2.fromOffset(55, 24),
+		Position          = UDim2.fromOffset(159, 28),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
 		PlaceholderColor3 = GRAY_COL,
-		Font            = Enum.Font.GothamMono,
-		TextScaled      = true,
-		BorderSizePixel = 0,
-		ClearTextOnFocus = false,
-	}, pnbPanel) :: TextBox
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, pnbPanel)
 	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, pnbMsBox)
 
-	local pnbStartBtn = mkBtn("▶ START PNB", UDim2.fromOffset(8, 60),  UDim2.fromOffset(126, 28), GREEN_COL, pnbPanel)
+	local pnbStartBtn = mkBtn("▶ START PNB", UDim2.fromOffset(8, 60),   UDim2.fromOffset(126, 28), GREEN_COL, pnbPanel)
 	local pnbStopBtn  = mkBtn("■ STOP PNB",  UDim2.fromOffset(142, 60), UDim2.fromOffset(120, 28), RED_COL,   pnbPanel)
 
 	-- ── SECTION: FARM AREA ──────────────────────────────────────
 	local farmPanel = mk("Frame", {
-		Name            = "FarmPanel",
-		Size            = UDim2.new(1, 0, 0, 108),
+		Name             = "FarmPanel",
+		Size             = UDim2.new(1, 0, 0, 108),
 		BackgroundColor3 = BG_PANEL,
-		BorderSizePixel = 0,
-		LayoutOrder     = 3,
-	}, content) :: Frame
+		BorderSizePixel  = 0,
+		LayoutOrder      = 3,
+	}, content)
 	mk("UICorner", { CornerRadius = UDim.new(0, 8) }, farmPanel)
 
 	mk("TextLabel", {
-		Text       = "Farm Area  (x1 y1 → x2 y2)",
-		Size       = UDim2.new(1, -10, 0, 20),
-		Position   = UDim2.fromOffset(8, 4),
+		Text                   = "Farm Area  (x1 y1 → x2 y2)",
+		Size                   = UDim2.new(1, -10, 0, 20),
+		Position               = UDim2.fromOffset(8, 4),
 		BackgroundTransparency = 1,
-		TextColor3 = ACCENT,
-		Font       = Enum.Font.GothamBold,
-		TextScaled = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
+		TextColor3             = ACCENT,
+		Font                   = Enum.Font.GothamBold,
+		TextScaled             = true,
+		TextXAlignment         = Enum.TextXAlignment.Left,
 	}, farmPanel)
 
 	-- Row 1: itemId, x1, y1
 	local farmItemBox = mk("TextBox", {
-		PlaceholderText = "Item ID",
-		Text = "", Size = UDim2.fromOffset(80, 24),
-		Position = UDim2.fromOffset(8, 28),
-		BackgroundColor3 = Color3.fromRGB(25,28,48),
-		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
-		Font = Enum.Font.GothamMono, TextScaled = true,
-		BorderSizePixel = 0, ClearTextOnFocus = false,
-	}, farmPanel) :: TextBox
-	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmItemBox)
+		PlaceholderText   = "Item ID",
+		Text              = "",
+		Size              = UDim2.fromOffset(80, 24),
+		Position          = UDim2.fromOffset(8, 28),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, farmPanel)
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, farmItemBox)
 
 	local farmX1Box = mk("TextBox", {
-		PlaceholderText = "x1", Text = "0",
-		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(96, 28),
-		BackgroundColor3 = Color3.fromRGB(25,28,48),
-		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
-		Font = Enum.Font.GothamMono, TextScaled = true,
-		BorderSizePixel = 0, ClearTextOnFocus = false,
-	}, farmPanel) :: TextBox
-	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmX1Box)
+		PlaceholderText   = "x1",
+		Text              = "0",
+		Size              = UDim2.fromOffset(44, 24),
+		Position          = UDim2.fromOffset(96, 28),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, farmPanel)
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, farmX1Box)
 
 	local farmY1Box = mk("TextBox", {
-		PlaceholderText = "y1", Text = "0",
-		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(148, 28),
-		BackgroundColor3 = Color3.fromRGB(25,28,48),
-		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
-		Font = Enum.Font.GothamMono, TextScaled = true,
-		BorderSizePixel = 0, ClearTextOnFocus = false,
-	}, farmPanel) :: TextBox
-	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmY1Box)
+		PlaceholderText   = "y1",
+		Text              = "0",
+		Size              = UDim2.fromOffset(44, 24),
+		Position          = UDim2.fromOffset(148, 28),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, farmPanel)
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, farmY1Box)
 
 	-- Row 2: x2, y2
 	local farmX2Box = mk("TextBox", {
-		PlaceholderText = "x2", Text = "0",
-		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(8, 58),
-		BackgroundColor3 = Color3.fromRGB(25,28,48),
-		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
-		Font = Enum.Font.GothamMono, TextScaled = true,
-		BorderSizePixel = 0, ClearTextOnFocus = false,
-	}, farmPanel) :: TextBox
-	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmX2Box)
+		PlaceholderText   = "x2",
+		Text              = "0",
+		Size              = UDim2.fromOffset(44, 24),
+		Position          = UDim2.fromOffset(8, 58),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, farmPanel)
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, farmX2Box)
 
 	local farmY2Box = mk("TextBox", {
-		PlaceholderText = "y2", Text = "0",
-		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(60, 58),
-		BackgroundColor3 = Color3.fromRGB(25,28,48),
-		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
-		Font = Enum.Font.GothamMono, TextScaled = true,
-		BorderSizePixel = 0, ClearTextOnFocus = false,
-	}, farmPanel) :: TextBox
-	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmY2Box)
+		PlaceholderText   = "y2",
+		Text              = "0",
+		Size              = UDim2.fromOffset(44, 24),
+		Position          = UDim2.fromOffset(60, 58),
+		BackgroundColor3  = Color3.fromRGB(25, 28, 48),
+		TextColor3        = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font              = Enum.Font.GothamMono,
+		TextScaled        = true,
+		BorderSizePixel   = 0,
+		ClearTextOnFocus  = false,
+	}, farmPanel)
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, farmY2Box)
 
 	local farmStartBtn = mkBtn("▶ FARM", UDim2.fromOffset(112, 55), UDim2.fromOffset(80, 30), GREEN_COL, farmPanel)
-	local farmStopBtn  = mkBtn("■ STOP",  UDim2.fromOffset(200, 55), UDim2.fromOffset(68, 30), RED_COL,   farmPanel)
+	local farmStopBtn  = mkBtn("■ STOP", UDim2.fromOffset(200, 55), UDim2.fromOffset(68, 30), RED_COL,   farmPanel)
 
 	-- ── REALTIME UPDATER ─────────────────────────────────────────
-	local function getActiveStatus(): (string, Color3)
+	local function getActiveStatus()
 		local active = {}
 		if _tasks["pnb"]  then table.insert(active, "PNB")  end
 		if _tasks["farm"] then table.insert(active, "FARM") end
@@ -670,7 +688,7 @@ local function buildGui()
 		return "● " .. table.concat(active, " + "), GREEN_COL
 	end
 
-	RunSvc.Heartbeat:Connect(function()
+	_hbConn = RunSvc.Heartbeat:Connect(function()
 		local p = getPos()
 		local px = tostring(p.x)
 		local py = tostring(p.y)
@@ -678,21 +696,25 @@ local function buildGui()
 		local statusTxt, statusCol = getActiveStatus()
 
 		-- Billboard update
-		posLabel.Text    = "Tile: (" .. px .. ", " .. py .. ")"
-		statusLabel.Text = statusTxt
-		statusLabel.TextColor3 = statusCol
+		if posLabel and posLabel.Parent then
+			posLabel.Text          = "Tile: (" .. px .. ", " .. py .. ")"
+			statusLabel.Text       = statusTxt
+			statusLabel.TextColor3 = statusCol
+		end
 
 		-- ScreenGui update
-		infoPosLabel.Text = "Tile  X: " .. px .. "   Y: " .. py
-		infoStatusLabel.Text = "Status: " .. (statusTxt:gsub("● ", ""))
-		infoStatusLabel.TextColor3 = statusCol
+		if infoPosLabel and infoPosLabel.Parent then
+			infoPosLabel.Text          = "Tile  X: " .. px .. "   Y: " .. py
+			infoStatusLabel.Text       = "Status: " .. (statusTxt:gsub("● ", ""))
+			infoStatusLabel.TextColor3 = statusCol
+		end
 	end)
 
 	-- ── BUTTON LOGIC ─────────────────────────────────────────────
 	pnbStartBtn.MouseButton1Click:Connect(function()
-		local id    = tonumber(pnbItemBox.Text)
-		local hits  = tonumber(pnbHitsBox.Text) or 3
-		local ms    = tonumber(pnbMsBox.Text) or 160
+		local id   = tonumber(pnbItemBox.Text)
+		local hits = tonumber(pnbHitsBox.Text) or 3
+		local ms   = tonumber(pnbMsBox.Text) or 160
 		if not id then return end
 		pnb(id, 0, 1, hits, ms)
 	end)
@@ -726,21 +748,55 @@ local function buildGui()
 	-- Billboard minimize toggle
 	local bbVisible = true
 	minBtn.MouseButton1Click:Connect(function()
-		bbVisible = not bbVisible
+		bbVisible    = not bbVisible
 		bbBg.Visible = bbVisible
-		minBtn.Text = bbVisible and "−" or "+"
+		minBtn.Text  = bbVisible and "−" or "+"
 	end)
 
-	-- Respawn rebuild
-	LP.CharacterAdded:Connect(function()
-		task.delay(2, buildGui)
-	end)
+	-- Respawn rebuild (hanya didaftarkan 1 kali)
+	if not _charConn then
+		_charConn = LP.CharacterAdded:Connect(function()
+			task.delay(2, buildGui)
+		end)
+	end
 end
 
 -- ══════════════════════════════════════════════════════════════════
--- BOOT
+-- BOOT & EXPORT SEMUA FUNGSI LOKAL
 -- ══════════════════════════════════════════════════════════════════
 
 task.spawn(buildGui)
 
--- END
+local ExportedAPI = {
+	getNet        = getNet,
+	getPos        = getPos,
+	getPosRaw     = getPosRaw,
+	tileFromWorld = tileFromWorld,
+	worldFromTile = worldFromTile,
+	place         = place,
+	placeRel      = placeRel,
+	break_        = break_,
+	breakRel      = breakRel,
+	wrench        = wrench,
+	harvest       = harvest,
+	toggle        = toggle,
+	warp          = warp,
+	drop          = drop,
+	equip         = equip,
+	startLoop     = startLoop,
+	stopLoop      = stopLoop,
+	pnb           = pnb,
+	stopPNB       = stopPNB,
+	farmArea      = farmArea,
+	stopFarm      = stopFarm,
+	stopAll       = stopAll,
+	buildGui      = buildGui,
+}
+
+-- Daftarkan otomatis ke Global Environment agar bisa langsung dipanggil
+local env = (getgenv and getgenv()) or _G
+for funcName, funcRef in pairs(ExportedAPI) do
+	env[funcName] = funcRef
+end
+
+return ExportedAPI
