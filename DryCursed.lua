@@ -1,581 +1,750 @@
 --!strict
--- File: DryCursed_SDK.lua
--- Architecture: Luau (Roblox Client Environment) | Target: ByteNet Sandbox Game Framework
--- Dependencies: ReplicatedStorage.ByteNet, ReplicatedStorage.Shared, Packages (Promise, Signal, Janitor)
+-- GentaHax.lua
+-- Target: Grow a Garden (Roblox) | ByteNet / Shared.Net Architecture
+-- Luau Client Environment
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- ══════════════════════════════════════════════════════════════════
+-- DAFTAR FUNGSI CEPAT
+-- ══════════════════════════════════════════════════════════════════
+--
+-- getPos()                        → {x, y} posisi tile karakter
+-- getPosRaw()                     → Vector3 posisi dunia karakter
+-- tileFromWorld(wx, wy)           → {x, y} konversi dunia ke tile
+-- worldFromTile(tx, ty)           → Vector3 konversi tile ke dunia
+--
+-- place(x, y, itemId)             → place tile di koordinat
+-- placeRel(dx, dy, itemId)        → place relatif dari posisi sekarang
+-- break_(x, y)                    → pukul / break tile di koordinat
+-- breakRel(dx, dy)                → break relatif dari posisi sekarang
+-- wrench(x, y)                    → wrench tile (buka menu tile)
+-- harvest(x, y)                   → harvest provider (pohon, dll)
+-- toggle(x, y)                    → toggle tile (switch, pintu, dll)
+--
+-- warp(worldName)                 → warp ke dunia lain
+-- drop(itemId, count)             → drop item dari inventory
+-- equip(itemId)                   → equip item di tangan
+--
+-- pnb(itemId, dx, dy, hits, ms)   → auto place & break loop
+-- stopPNB()                       → hentikan loop pnb
+--
+-- farmArea(itemId,x1,y1,x2,y2,hits,ms) → farm area persegi
+-- stopFarm()                      → hentikan farm area
+--
+-- stopAll()                       → hentikan semua loop
+--
+-- ══════════════════════════════════════════════════════════════════
+
+local RS      = game:GetService("ReplicatedStorage")
+local RunSvc  = game:GetService("RunService")
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local TweenSvc = game:GetService("TweenService")
+local LP      = Players.LocalPlayer
 
-local LocalPlayer = Players.LocalPlayer
-
-export type TileCoord = { X: number, Y: number }
-export type PacketSchema = { ID: number, Hex: string, Name: string, Struct: string }
-
-local DryCursed = {}
-DryCursed.__index = DryCursed
-DryCursed.Version = "1.0.0-PROD"
-DryCursed.Author = "Dry Cursed Community"
-
--- ============================================================================
--- 1. HEX-TO-ID REGISTRY (ABSTRAKSI PENUH DARI RAW HEX KE READABLE ID)
--- ============================================================================
-DryCursed.PacketRegistry = {
-	TILE_PUNCH      = { ID = 1,  Hex = "0x01", Name = "TilePunch",      Struct = "vec2_uint8" },
-	TILE_PLACE      = { ID = 2,  Hex = "0x02", Name = "TilePlace",      Struct = "vec2_uint16" },
-	TILE_WRENCH     = { ID = 3,  Hex = "0x03", Name = "TileWrench",     Struct = "vec2_uint8" },
-	ITEM_DROP       = { ID = 4,  Hex = "0x04", Name = "ItemDrop",       Struct = "uint16_uint16" },
-	ITEM_TRASH      = { ID = 5,  Hex = "0x05", Name = "ItemTrash",      Struct = "uint16_uint16" },
-	ITEM_EQUIP      = { ID = 6,  Hex = "0x06", Name = "ItemEquip",      Struct = "uint16" },
-	DOOR_ENTER      = { ID = 7,  Hex = "0x07", Name = "DoorEnter",      Struct = "vec2_string" },
-	WORLD_WARP      = { ID = 8,  Hex = "0x08", Name = "WorldWarp",      Struct = "string" },
-	VEND_BUY        = { ID = 9,  Hex = "0x09", Name = "VendBuy",        Struct = "vec2_uint16_uint32" },
-	VEND_STOCK      = { ID = 10, Hex = "0x0A", Name = "VendStock",      Struct = "vec2_uint16" },
-	PVEND_BUY       = { ID = 11, Hex = "0x0B", Name = "PVendBuy",       Struct = "vec2_uint16_uint32" },
-	COMBINE_ITEMS   = { ID = 12, Hex = "0x0C", Name = "CombineItems",   Struct = "vec2_uint16_uint16_uint16" },
-	SPLICE_SEEDS    = { ID = 13, Hex = "0x0D", Name = "SpliceSeeds",    Struct = "vec2_uint16_uint16" },
-	TRADE_OFFER     = { ID = 14, Hex = "0x0E", Name = "TradeOffer",     Struct = "uint32_uint16_uint16" },
-	TRADE_ACCEPT    = { ID = 15, Hex = "0x0F", Name = "TradeAccept",    Struct = "bool" },
-	SURGERY_TOOL    = { ID = 16, Hex = "0x10", Name = "SurgeryTool",    Struct = "uint8" },
-	AREA_LOCK_EDIT  = { ID = 17, Hex = "0x11", Name = "AreaLockEdit",   Struct = "vec2_uint8_bool" },
-	SHOP_BUY_PACK   = { ID = 18, Hex = "0x12", Name = "ShopBuyPack",    Struct = "string" },
-	REDEEM_CODE     = { ID = 19, Hex = "0x13", Name = "RedeemCode",     Struct = "string" },
-	CHAT_SEND       = { ID = 20, Hex = "0x14", Name = "ChatSend",       Struct = "string" },
-	COLLECT_OBJECT  = { ID = 21, Hex = "0x15", Name = "CollectObject",  Struct = "uint32" },
-}
-
-DryCursed.ReversePacketMap = {}
-for key, data in pairs(DryCursed.PacketRegistry) do
-	DryCursed.ReversePacketMap[data.ID] = key
-	DryCursed.ReversePacketMap[data.Hex] = key
+-- ─── NET RESOLVER ─────────────────────────────────────────────────
+local function getNet(): any
+	return require(RS:WaitForChild("Shared"):WaitForChild("Net"))
 end
 
-DryCursed.SurgeryTools = {
-	SPONGE     = 1,
-	SCALPEL    = 2,
-	STITCHES   = 3,
-	ANTIBIOTIC = 4,
-	ANTISEPTIC = 5,
-	ANESTHETIC = 6,
-	LAB_KIT    = 7,
-	PINS       = 8,
-	CLAMP      = 9,
-	TRANSFUSE  = 10,
-	DEFIB      = 11,
-	SPLINT     = 12,
-}
+-- ─── KONSTANTA GRID ───────────────────────────────────────────────
+local TILE_SZ  = 2
+local TILE_OFF = 0.5
 
--- ============================================================================
--- 2. INTERNAL MODULE RESOLVER & CACHE
--- ============================================================================
-DryCursed.Modules = {
-	ByteNet     = nil :: any,
-	SharedNet   = nil :: any,
-	ItemDB      = {} :: { [number]: any },
-	ItemNameMap = {} :: { [string]: number },
-	BlocksDB    = {} :: { [number]: any },
-	ClothesDB   = {} :: { [number]: any },
-	SpliceDB    = {} :: { [string]: number },
-	CombineDB   = {} :: { [string]: number },
-	WorldCodec  = nil :: any,
-	Inventory   = nil :: any,
-	Janitor     = nil :: any,
-	Signal      = nil :: any,
-	Promise     = nil :: any,
-}
+-- ══════════════════════════════════════════════════════════════════
+-- POS: POSISI & KONVERSI KOORDINAT
+-- ══════════════════════════════════════════════════════════════════
 
-local function safeRequire(instance: Instance?): any
-	if not instance or not instance:IsA("ModuleScript") then
-		return nil
-	end
-	local ok, result = pcall(require, instance)
-	return if ok then result else nil
+local function getPosRaw(): Vector3
+	local char = LP and LP.Character
+	local hrp  = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+	if hrp then return hrp.Position end
+	return Vector3.zero
 end
 
-function DryCursed:Init(): boolean
-	local sharedFolder = ReplicatedStorage:WaitForChild("Shared", 5)
-	local packagesFolder = ReplicatedStorage:WaitForChild("Packages", 5)
-	local byteNetModule = ReplicatedStorage:FindFirstChild("ByteNet")
-
-	if byteNetModule then
-		self.Modules.ByteNet = safeRequire(byteNetModule)
-	end
-
-	if packagesFolder then
-		self.Modules.Janitor = safeRequire(packagesFolder:FindFirstChild("Janitor"))
-		self.Modules.Signal = safeRequire(packagesFolder:FindFirstChild("Signal"))
-		local indexFolder = packagesFolder:FindFirstChild("_Index")
-		if indexFolder then
-			for _, child in ipairs(indexFolder:GetDescendants()) do
-				if child.Name == "promise" and child:IsA("ModuleScript") then
-					self.Modules.Promise = safeRequire(child)
-					break
-				end
-			end
-		end
-	end
-
-	if sharedFolder then
-		self.Modules.SharedNet  = safeRequire(sharedFolder:FindFirstChild("Net"))
-		self.Modules.Inventory  = safeRequire(sharedFolder:FindFirstChild("Inventory"))
-		self.Modules.WorldCodec = safeRequire(sharedFolder:FindFirstChild("WorldCodec"))
-
-		local rawItems = safeRequire(sharedFolder:FindFirstChild("ItemDB"))
-		if type(rawItems) == "table" then
-			self.Modules.ItemDB = rawItems
-			for id, info in pairs(rawItems) do
-				local numId = tonumber(id) or info.id or info.ID
-				local name = type(info) == "table" and (info.name or info.Name) or nil
-				if numId and type(name) == "string" then
-					self.Modules.ItemNameMap[string.lower(name)] = numId
-				end
-			end
-		end
-
-		local rawBlocks = safeRequire(sharedFolder:FindFirstChild("BlocksDB"))
-		if type(rawBlocks) == "table" then
-			self.Modules.BlocksDB = rawBlocks
-			for id, info in pairs(rawBlocks) do
-				local numId = tonumber(id) or (type(info) == "table" and (info.id or info.ID))
-				local name = type(info) == "table" and (info.name or info.Name) or nil
-				if numId and type(name) == "string" and not self.Modules.ItemNameMap[string.lower(name)] then
-					self.Modules.ItemNameMap[string.lower(name)] = numId
-				end
-			end
-		end
-
-		local rawClothes = safeRequire(sharedFolder:FindFirstChild("ClothesDB"))
-		if type(rawClothes) == "table" then
-			self.Modules.ClothesDB = rawClothes
-		end
-
-		-- Dynamic Packet ID Binding dari ByteNet.namespaces.packetIDs jika tersedia
-		if byteNetModule then
-			local namespaces = byteNetModule:FindFirstChild("namespaces")
-			local packetIDsMod = namespaces and namespaces:FindFirstChild("packetIDs")
-			local runtimeIDs = safeRequire(packetIDsMod)
-			if type(runtimeIDs) == "table" then
-				for name, runtimeId in pairs(runtimeIDs) do
-					for _, reg in pairs(self.PacketRegistry) do
-						if string.lower(reg.Name) == string.lower(tostring(name)) and type(runtimeId) == "number" then
-							reg.ID = runtimeId
-							reg.Hex = string.format("0x%02X", runtimeId)
-						end
-					end
-				end
-			end
-		end
-	end
-
-	return true
-end
-
--- ============================================================================
--- 3. DATABASE & ITEM ID RESOLVER (NO-HEX USER INTERFACE)
--- ============================================================================
-DryCursed.DB = {}
-
-function DryCursed.DB.GetID(itemIdentifier: string | number): number
-	if type(itemIdentifier) == "number" then
-		return math.clamp(math.floor(itemIdentifier), 0, 65535)
-	end
-	local cleanName = string.lower(string.gsub(itemIdentifier, "^%s*(.-)%s*$", "%1"))
-	if DryCursed.Modules.ItemNameMap[cleanName] then
-		return DryCursed.Modules.ItemNameMap[cleanName]
-	end
-	for registeredName, id in pairs(DryCursed.Modules.ItemNameMap) do
-		if string.find(registeredName, cleanName, 1, true) then
-			return id
-		end
-	end
-	return 0
-end
-
-function DryCursed.DB.GetSeedID(blockIdentifier: string | number): number
-	local baseId = DryCursed.DB.GetID(blockIdentifier)
-	if baseId == 0 then return 0 end
-	local info = DryCursed.Modules.ItemDB[baseId] or DryCursed.Modules.BlocksDB[baseId]
-	if type(info) == "table" and info.seedId then
-		return info.seedId
-	end
-	return baseId + 1
-end
-
-function DryCursed.DB.GetInfo(itemIdentifier: string | number): { [string]: any }?
-	local id = DryCursed.DB.GetID(itemIdentifier)
-	return DryCursed.Modules.ItemDB[id] or DryCursed.Modules.BlocksDB[id] or DryCursed.Modules.ClothesDB[id]
-end
-
--- ============================================================================
--- 4. BYTENET BUFFER COMPILER & DISPATCHER (INTERNAL ENGINE)
--- ============================================================================
-DryCursed.Net = {}
-DryCursed.Net._Remote = nil :: RemoteEvent?
-DryCursed.Net._Listeners = {} :: { [string]: { (any) -> () } }
-
-function DryCursed.Net._GetRemote(): RemoteEvent?
-	if DryCursed.Net._Remote and DryCursed.Net._Remote.Parent then
-		return DryCursed.Net._Remote
-	end
-	for _, inst in ipairs(ReplicatedStorage:GetDescendants()) do
-		if inst:IsA("RemoteEvent") and (string.find(string.lower(inst.Name), "bytenet") or string.find(string.lower(inst.Name), "net")) then
-			DryCursed.Net._Remote = inst
-			return inst
-		end
-	end
-	return nil
-end
-
-function DryCursed.Net.EncodePacket(actionKey: string | number, payload: { [string]: any }): buffer
-	local schema: PacketSchema? = nil
-	if type(actionKey) == "number" then
-		local mappedKey = DryCursed.ReversePacketMap[actionKey]
-		schema = mappedKey and DryCursed.PacketRegistry[mappedKey]
-	else
-		schema = DryCursed.PacketRegistry[actionKey] or DryCursed.PacketRegistry[DryCursed.ReversePacketMap[actionKey]]
-	end
-
-	local packetId = if schema then schema.ID else (tonumber(actionKey) or 0)
-	local structType = if schema then schema.Struct else "raw"
-
-	if structType == "vec2_uint8" then
-		local buf = buffer.create(6)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writei16(buf, 1, math.clamp(payload.X or 0, -32768, 32767))
-		buffer.writei16(buf, 3, math.clamp(payload.Y or 0, -32768, 32767))
-		buffer.writeu8(buf, 5, math.clamp(payload.Value or 0, 0, 255))
-		return buf
-
-	elseif structType == "vec2_uint16" then
-		local buf = buffer.create(7)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writei16(buf, 1, math.clamp(payload.X or 0, -32768, 32767))
-		buffer.writei16(buf, 3, math.clamp(payload.Y or 0, -32768, 32767))
-		buffer.writeu16(buf, 5, math.clamp(payload.ItemID or 0, 0, 65535))
-		return buf
-
-	elseif structType == "uint16_uint16" then
-		local buf = buffer.create(5)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writeu16(buf, 1, math.clamp(payload.ItemID or 0, 0, 65535))
-		buffer.writeu16(buf, 3, math.clamp(payload.Count or 1, 0, 65535))
-		return buf
-
-	elseif structType == "uint16" then
-		local buf = buffer.create(3)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writeu16(buf, 1, math.clamp(payload.ItemID or 0, 0, 65535))
-		return buf
-
-	elseif structType == "uint8" then
-		local buf = buffer.create(2)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writeu8(buf, 1, math.clamp(payload.Value or 0, 0, 255))
-		return buf
-
-	elseif structType == "uint32" then
-		local buf = buffer.create(5)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writeu32(buf, 1, math.clamp(payload.ObjectID or 0, 0, 4294967295))
-		return buf
-
-	elseif structType == "vec2_uint16_uint32" then
-		local buf = buffer.create(11)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writei16(buf, 1, math.clamp(payload.X or 0, -32768, 32767))
-		buffer.writei16(buf, 3, math.clamp(payload.Y or 0, -32768, 32767))
-		buffer.writeu16(buf, 5, math.clamp(payload.Count or 1, 0, 65535))
-		buffer.writeu32(buf, 7, math.clamp(payload.ExpectedPrice or 0, 0, 4294967295))
-		return buf
-
-	elseif structType == "vec2_uint16_uint16" then
-		local buf = buffer.create(9)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writei16(buf, 1, math.clamp(payload.X or 0, -32768, 32767))
-		buffer.writei16(buf, 3, math.clamp(payload.Y or 0, -32768, 32767))
-		buffer.writeu16(buf, 5, math.clamp(payload.SeedA or 0, 0, 65535))
-		buffer.writeu16(buf, 7, math.clamp(payload.SeedB or 0, 0, 65535))
-		return buf
-
-	elseif structType == "vec2_uint16_uint16_uint16" then
-		local buf = buffer.create(11)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writei16(buf, 1, math.clamp(payload.X or 0, -32768, 32767))
-		buffer.writei16(buf, 3, math.clamp(payload.Y or 0, -32768, 32767))
-		buffer.writeu16(buf, 5, math.clamp(payload.ItemA or 0, 0, 65535))
-		buffer.writeu16(buf, 7, math.clamp(payload.ItemB or 0, 0, 65535))
-		buffer.writeu16(buf, 9, math.clamp(payload.ItemC or 0, 0, 65535))
-		return buf
-
-	elseif structType == "string" then
-		local str = tostring(payload.Text or "")
-		local strLen = math.min(#str, 1024)
-		local buf = buffer.create(3 + strLen)
-		buffer.writeu8(buf, 0, packetId)
-		buffer.writeu16(buf, 1, strLen)
-		buffer.writestring(buf, 3, str, strLen)
-		return buf
-	end
-
-	local fallback = buffer.create(1)
-	buffer.writeu8(fallback, 0, packetId)
-	return fallback
-end
-
-function DryCursed.Net.Send(actionKey: string | number, payload: { [string]: any }): boolean
-	-- Prioritas 1: Gunakan Shared.Net native function jika tersedia
-	local sharedNet = DryCursed.Modules.SharedNet
-	local schema = DryCursed.PacketRegistry[tostring(actionKey)]
-	if type(sharedNet) == "table" and schema and type(sharedNet[schema.Name]) == "function" then
-		local ok = pcall(sharedNet[schema.Name], payload)
-		if ok then return true end
-	end
-
-	-- Prioritas 2: Gunakan ByteNet Buffer Writer & Remote Dispatcher
-	local packetBuffer = DryCursed.Net.EncodePacket(actionKey, payload)
-	local remote = DryCursed.Net._GetRemote()
-	if remote then
-		remote:FireServer(packetBuffer)
-		return true
-	end
-	return false
-end
-
--- ============================================================================
--- 5. WORLD, GRID & TILE CONTROLLER
--- ============================================================================
-DryCursed.World = {}
-DryCursed.World.TileSize = 3 -- Ukuran standar stud per tile
-
-function DryCursed.World.GetPlayerTile(): TileCoord
-	local character = LocalPlayer and LocalPlayer.Character
-	local rootPart = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	if not rootPart then
-		return { X = 0, Y = 0 }
-	end
-	local pos = rootPart.Position
+local function tileFromWorld(wx: number, wy: number): { x: number, y: number }
 	return {
-		X = math.floor((pos.X / DryCursed.World.TileSize) + 0.5),
-		Y = math.floor((pos.Y / DryCursed.World.TileSize) + 0.5),
+		x = math.floor(wx / TILE_SZ + 0.5),
+		y = math.floor(wy / TILE_SZ + 0.5),
 	}
 end
 
-function DryCursed.World.Punch(relOrAbsX: number, relOrAbsY: number, isRelative: boolean?): boolean
-	local targetX, targetY = relOrAbsX, relOrAbsY
-	if isRelative then
-		local base = DryCursed.World.GetPlayerTile()
-		targetX = base.X + relOrAbsX
-		targetY = base.Y + relOrAbsY
-	end
-	return DryCursed.Net.Send("TILE_PUNCH", { X = targetX, Y = targetY, Value = 1 })
+local function worldFromTile(tx: number, ty: number): Vector3
+	return Vector3.new(tx * TILE_SZ + TILE_OFF, ty * TILE_SZ + TILE_OFF, 0)
 end
 
-function DryCursed.World.Place(relOrAbsX: number, relOrAbsY: number, itemIdentifier: string | number, isRelative: boolean?): boolean
-	local itemId = DryCursed.DB.GetID(itemIdentifier)
-	if itemId == 0 then return false end
-	local targetX, targetY = relOrAbsX, relOrAbsY
-	if isRelative then
-		local base = DryCursed.World.GetPlayerTile()
-		targetX = base.X + relOrAbsX
-		targetY = base.Y + relOrAbsY
-	end
-	return DryCursed.Net.Send("TILE_PLACE", { X = targetX, Y = targetY, ItemID = itemId })
+local function getPos(): { x: number, y: number }
+	local raw = getPosRaw()
+	return tileFromWorld(raw.X, raw.Y)
 end
 
-function DryCursed.World.Wrench(relOrAbsX: number, relOrAbsY: number, isRelative: boolean?): boolean
-	local targetX, targetY = relOrAbsX, relOrAbsY
-	if isRelative then
-		local base = DryCursed.World.GetPlayerTile()
-		targetX = base.X + relOrAbsX
-		targetY = base.Y + relOrAbsY
-	end
-	return DryCursed.Net.Send("TILE_WRENCH", { X = targetX, Y = targetY, Value = 0 })
-end
+-- ══════════════════════════════════════════════════════════════════
+-- TILE ACTIONS
+-- ══════════════════════════════════════════════════════════════════
 
-function DryCursed.World.Warp(worldName: string, doorId: string?): boolean
-	local cleanWorld = string.upper(string.gsub(worldName, "%s+", ""))
-	if doorId and #doorId > 0 then
-		cleanWorld = cleanWorld .. ":" .. doorId
-	end
-	return DryCursed.Net.Send("WORLD_WARP", { Text = cleanWorld })
-end
-
-function DryCursed.World.CollectDroppedObject(objectUid: number): boolean
-	return DryCursed.Net.Send("COLLECT_OBJECT", { ObjectID = objectUid })
-end
-
--- ============================================================================
--- 6. INVENTORY, CRAFTING, VENDING & SURGERY CONTROLLERS
--- ============================================================================
-DryCursed.Inventory = {}
-
-function DryCursed.Inventory.GetCount(itemIdentifier: string | number): number
-	local itemId = DryCursed.DB.GetID(itemIdentifier)
-	local invMod = DryCursed.Modules.Inventory
-	if type(invMod) == "table" then
-		if type(invMod.GetItemCount) == "function" then
-			local ok, count = pcall(invMod.GetItemCount, itemId)
-			if ok and type(count) == "number" then return count end
-		elseif type(invMod.Items) == "table" and invMod.Items[itemId] then
-			return invMod.Items[itemId].Amount or invMod.Items[itemId].count or 0
-		end
-	end
-	return 0
-end
-
-function DryCursed.Inventory.Drop(itemIdentifier: string | number, count: number?): boolean
-	local itemId = DryCursed.DB.GetID(itemIdentifier)
-	if itemId == 0 then return false end
-	local dropAmount = count or DryCursed.Inventory.GetCount(itemId)
-	return DryCursed.Net.Send("ITEM_DROP", { ItemID = itemId, Count = math.max(1, dropAmount) })
-end
-
-function DryCursed.Inventory.Trash(itemIdentifier: string | number, count: number?): boolean
-	local itemId = DryCursed.DB.GetID(itemIdentifier)
-	if itemId == 0 then return false end
-	return DryCursed.Net.Send("ITEM_TRASH", { ItemID = itemId, Count = math.max(1, count or 1) })
-end
-
-function DryCursed.Inventory.Equip(itemIdentifier: string | number): boolean
-	local itemId = DryCursed.DB.GetID(itemIdentifier)
-	if itemId == 0 then return false end
-	return DryCursed.Net.Send("ITEM_EQUIP", { ItemID = itemId })
-end
-
-DryCursed.Craft = {}
-
-function DryCursed.Craft.Splice(tileX: number, tileY: number, seedA: string | number, seedB: string | number): boolean
-	local idA = DryCursed.DB.GetID(seedA)
-	local idB = DryCursed.DB.GetID(seedB)
-	return DryCursed.Net.Send("SPLICE_SEEDS", { X = tileX, Y = tileY, SeedA = idA, SeedB = idB })
-end
-
-function DryCursed.Craft.Combine(tileX: number, tileY: number, itemA: string | number, itemB: string | number, itemC: string | number): boolean
-	return DryCursed.Net.Send("COMBINE_ITEMS", {
-		X = tileX,
-		Y = tileY,
-		ItemA = DryCursed.DB.GetID(itemA),
-		ItemB = DryCursed.DB.GetID(itemB),
-		ItemC = DryCursed.DB.GetID(itemC),
+local function place(x: number, y: number, itemId: number, layer: number?)
+	getNet().tile.send({
+		layer = layer or 1,
+		x     = x,
+		y     = y,
+		id    = itemId,
+		flip  = false,
 	})
 end
 
-DryCursed.Vend = {}
+local function placeRel(dx: number, dy: number, itemId: number, layer: number?)
+	local p = getPos()
+	place(p.x + dx, p.y + dy, itemId, layer)
+end
 
-function DryCursed.Vend.Buy(tileX: number, tileY: number, count: number, expectedPrice: number, isPublicVend: boolean?): boolean
-	local action = if isPublicVend then "PVEND_BUY" else "VEND_BUY"
-	return DryCursed.Net.Send(action, {
-		X = tileX,
-		Y = tileY,
-		Count = count,
-		ExpectedPrice = expectedPrice,
+local function break_(x: number, y: number)
+	getNet().act.send({
+		kind = 6,
+		x    = x + TILE_OFF,
+		y    = y + TILE_OFF,
 	})
 end
 
-function DryCursed.Vend.Restock(tileX: number, tileY: number, itemIdentifier: string | number): boolean
-	return DryCursed.Net.Send("VEND_STOCK", {
-		X = tileX,
-		Y = tileY,
-		ItemID = DryCursed.DB.GetID(itemIdentifier),
+local function breakRel(dx: number, dy: number)
+	local p = getPos()
+	break_(p.x + dx, p.y + dy)
+end
+
+local function wrench(x: number, y: number)
+	getNet().act.send({
+		kind = 1,
+		x    = x + TILE_OFF,
+		y    = y + TILE_OFF,
 	})
 end
 
-DryCursed.Surgery = {}
-
-function DryCursed.Surgery.UseTool(toolNameOrId: string | number): boolean
-	local toolId = if type(toolNameOrId) == "number"
-		then toolNameOrId
-		else (DryCursed.SurgeryTools[string.upper(toolNameOrId)] or 1)
-	return DryCursed.Net.Send("SURGERY_TOOL", { Value = toolId })
+local function harvest(x: number, y: number)
+	getNet().harvest.send({ x = x, y = y })
 end
 
--- ============================================================================
--- 7. CONTINUOUS ALGORITHM SCHEDULER (STATE MACHINE & LOOP RUNNER)
--- ============================================================================
-DryCursed.Scheduler = {}
-DryCursed.Scheduler._Tasks = {} :: { [string]: { Active: boolean, Interval: number, LastTick: number, Callback: (dt: number) -> () } }
-DryCursed.Scheduler._Connection = nil :: RBXScriptConnection?
+local function toggle(x: number, y: number, layer: number?)
+	getNet().toggle.send({
+		layer = layer or 1,
+		x     = x,
+		y     = y,
+	})
+end
 
-function DryCursed.Scheduler._EnsureMasterLoop()
-	if DryCursed.Scheduler._Connection then return end
-	DryCursed.Scheduler._Connection = RunService.Heartbeat:Connect(function(dt: number)
+-- ══════════════════════════════════════════════════════════════════
+-- WORLD & INVENTORY
+-- ══════════════════════════════════════════════════════════════════
+
+local function warp(worldName: string)
+	local name = string.upper(string.gsub(worldName, "%s+", ""))
+	getNet().tile.send({
+		layer = 0, x = 0, y = 0, id = 0, flip = false, warp = name,
+	})
+end
+
+local function drop(itemId: number, count: number?)
+	getNet().drop.send({
+		id    = itemId,
+		count = math.max(1, count or 1),
+	})
+end
+
+local function equip(itemId: number)
+	getNet().wear.send({ hand = itemId, hat = nil })
+end
+
+-- ══════════════════════════════════════════════════════════════════
+-- INTERNAL SCHEDULER
+-- ══════════════════════════════════════════════════════════════════
+
+local _tasks: { [string]: RBXScriptConnection } = {}
+
+local function startLoop(name: string, intervalSec: number, fn: () -> ())
+	if _tasks[name] then _tasks[name]:Disconnect() end
+	local last = 0
+	_tasks[name] = RunSvc.Heartbeat:Connect(function()
 		local now = os.clock()
-		for taskName, taskData in pairs(DryCursed.Scheduler._Tasks) do
-			if taskData.Active and (now - taskData.LastTick) >= taskData.Interval then
-				taskData.LastTick = now
-				local ok, err = pcall(taskData.Callback, dt)
-				if not ok then
-					warn(string.format("[DryCursed.Scheduler] Task '%s' error: %s", taskName, tostring(err)))
-				end
-			end
+		if now - last >= intervalSec then
+			last = now
+			local ok, err = pcall(fn)
+			if not ok then warn("[GH] " .. name .. ": " .. tostring(err)) end
 		end
 	end)
 end
 
-function DryCursed.Scheduler.StartTask(taskName: string, intervalSeconds: number, callback: (dt: number) -> ())
-	DryCursed.Scheduler._EnsureMasterLoop()
-	DryCursed.Scheduler._Tasks[taskName] = {
-		Active = true,
-		Interval = math.max(0.015, intervalSeconds),
-		LastTick = 0,
-		Callback = callback,
-	}
-end
-
-function DryCursed.Scheduler.StopTask(taskName: string)
-	if DryCursed.Scheduler._Tasks[taskName] then
-		DryCursed.Scheduler._Tasks[taskName].Active = false
-		DryCursed.Scheduler._Tasks[taskName] = nil
+local function stopLoop(name: string)
+	if _tasks[name] then
+		_tasks[name]:Disconnect()
+		_tasks[name] = nil
 	end
 end
 
-function DryCursed.Scheduler.StopAll()
-	table.clear(DryCursed.Scheduler._Tasks)
-	if DryCursed.Scheduler._Connection then
-		DryCursed.Scheduler._Connection:Disconnect()
-		DryCursed.Scheduler._Connection = nil
-	end
-end
+-- ══════════════════════════════════════════════════════════════════
+-- PNB: PLACE AND BREAK LOOP
+-- ══════════════════════════════════════════════════════════════════
 
--- Built-in Continuous PNB (Place & Break) Engine
-function DryCursed.Scheduler.StartPNB(config: {
-	Block: string | number,
-	OffsetX: number?,
-	OffsetY: number?,
-	HitsPerBlock: number?,
-	DelayMs: number?,
-	AutoDropSeed: boolean?,
-	SeedDropThreshold: number?,
-})
-	local blockId = DryCursed.DB.GetID(config.Block)
-	local seedId = DryCursed.DB.GetSeedID(blockId)
-	local offX = config.OffsetX or 0
-	local offY = config.OffsetY or 1
-	local hitsRequired = config.HitsPerBlock or 3
-	local interval = (config.DelayMs or 160) / 1000
-	local seedCap = config.SeedDropThreshold or 190
-
-	local currentStage = "PLACE"
-	local currentHits = 0
-
-	DryCursed.Scheduler.StartTask("DryCursed_AutoPNB", interval, function()
-		if config.AutoDropSeed and DryCursed.Inventory.GetCount(seedId) >= seedCap then
-			DryCursed.Inventory.Drop(seedId)
-			return
-		end
-
-		if currentStage == "PLACE" then
-			DryCursed.World.Place(offX, offY, blockId, true)
-			currentHits = 0
-			currentStage = "PUNCH"
-		elseif currentStage == "PUNCH" then
-			DryCursed.World.Punch(offX, offY, true)
-			currentHits += 1
-			if currentHits >= hitsRequired then
-				currentStage = "PLACE"
-			end
+local function pnb(itemId: number, dx: number?, dy: number?, hits: number?, ms: number?)
+	local offX    = dx or 0
+	local offY    = dy or 1
+	local hitsReq = hits or 3
+	local iv      = (ms or 160) / 1000
+	local stage   = "PLACE"
+	local hitCount = 0
+	startLoop("pnb", iv, function()
+		if stage == "PLACE" then
+			placeRel(offX, offY, itemId)
+			hitCount = 0
+			stage    = "BREAK"
+		else
+			breakRel(offX, offY)
+			hitCount += 1
+			if hitCount >= hitsReq then stage = "PLACE" end
 		end
 	end)
 end
 
-return DryCursed
+local function stopPNB()
+	stopLoop("pnb")
+end
+
+-- ══════════════════════════════════════════════════════════════════
+-- FARM AREA
+-- ══════════════════════════════════════════════════════════════════
+
+local function farmArea(
+	itemId: number,
+	x1: number, y1: number,
+	x2: number, y2: number,
+	hits: number?,
+	ms: number?
+)
+	local hitsReq = hits or 3
+	local iv      = (ms or 160) / 1000
+	local xs, xe  = math.min(x1,x2), math.max(x1,x2)
+	local ys, ye  = math.min(y1,y2), math.max(y1,y2)
+
+	local tiles: { { x: number, y: number } } = {}
+	for ty = ys, ye do
+		for tx = xs, xe do
+			table.insert(tiles, { x = tx, y = ty })
+		end
+	end
+
+	local idx      = 1
+	local stage    = "PLACE"
+	local hitCount = 0
+
+	startLoop("farm", iv, function()
+		if idx > #tiles then
+			idx = 1 ; stage = "PLACE" ; hitCount = 0
+		end
+		local t = tiles[idx]
+		if stage == "PLACE" then
+			place(t.x, t.y, itemId)
+			hitCount = 0 ; stage = "BREAK"
+		else
+			break_(t.x, t.y)
+			hitCount += 1
+			if hitCount >= hitsReq then idx += 1 ; stage = "PLACE" end
+		end
+	end)
+end
+
+local function stopFarm()
+	stopLoop("farm")
+end
+
+local function stopAll()
+	for name, conn in pairs(_tasks) do
+		conn:Disconnect()
+		_tasks[name] = nil
+	end
+end
+
+-- ══════════════════════════════════════════════════════════════════
+-- GUI VISUAL — HUMANOID PART BILLBOARD
+-- ══════════════════════════════════════════════════════════════════
+-- BillboardGui di atas kepala karakter, menampilkan:
+--   · Nama player
+--   · Posisi tile (X, Y) realtime
+--   · Status task aktif (PNB / FARM / IDLE)
+--   · Tombol toggle GUI (minimize / restore)
+--   · Panel kontrol PNB dan Farm langsung di head
+-- ══════════════════════════════════════════════════════════════════
+
+local GUI_TAG  = "GH_HeadGui"
+local ACCENT   = Color3.fromRGB(94, 234, 212)   -- teal
+local BG_DARK  = Color3.fromRGB(10,  12,  20)
+local BG_PANEL = Color3.fromRGB(15,  18,  30)
+local TEXT_COL = Color3.fromRGB(220, 230, 255)
+local RED_COL  = Color3.fromRGB(255, 80,  80)
+local GREEN_COL= Color3.fromRGB(80,  255, 140)
+local GRAY_COL = Color3.fromRGB(100, 110, 140)
+
+-- Helper: buat instance dengan properti sekaligus
+local function mk<T>(cls: string, props: { [string]: any }, parent: Instance?): T
+	local inst = Instance.new(cls)
+	for k, v in pairs(props) do
+		(inst :: any)[k] = v
+	end
+	if parent then inst.Parent = parent end
+	return inst :: any
+end
+
+-- Helper: button dengan hover effect
+local function mkBtn(label: string, pos: UDim2, size: UDim2, col: Color3, parent: Instance): TextButton
+	local btn = mk("TextButton", {
+		Name            = label,
+		Text            = label,
+		Position        = pos,
+		Size            = size,
+		BackgroundColor3 = col,
+		TextColor3      = Color3.fromRGB(10, 10, 10),
+		TextScaled      = true,
+		Font            = Enum.Font.GothamBold,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+	}, parent) :: TextButton
+
+	local corner = mk("UICorner", { CornerRadius = UDim.new(0, 6) }, btn)
+	_ = corner
+
+	btn.MouseEnter:Connect(function()
+		TweenSvc:Create(btn, TweenInfo.new(0.12), {
+			BackgroundColor3 = col:Lerp(Color3.new(1,1,1), 0.18),
+		}):Play()
+	end)
+	btn.MouseLeave:Connect(function()
+		TweenSvc:Create(btn, TweenInfo.new(0.12), {
+			BackgroundColor3 = col,
+		}):Play()
+	end)
+
+	return btn
+end
+
+local function buildGui()
+	-- Hapus GUI lama jika ada
+	local existing = LP.PlayerGui:FindFirstChild(GUI_TAG)
+	if existing then existing:Destroy() end
+
+	-- ── BILLBOARD DI ATAS KEPALA ────────────────────────────────
+	local char = LP.Character or LP.CharacterAdded:Wait()
+	local head = char:WaitForChild("Head") :: BasePart
+
+	local bb = mk("BillboardGui", {
+		Name           = GUI_TAG .. "_BB",
+		Adornee        = head,
+		Size           = UDim2.fromOffset(220, 90),
+		StudsOffset    = Vector3.new(0, 2.8, 0),
+		AlwaysOnTop    = true,
+		ResetOnSpawn   = false,
+		Active         = true,
+	}, head) :: BillboardGui
+
+	-- Background billboard
+	local bbBg = mk("Frame", {
+		Size            = UDim2.fromScale(1, 1),
+		BackgroundColor3 = BG_DARK,
+		BackgroundTransparency = 0.15,
+		BorderSizePixel = 0,
+	}, bb) :: Frame
+	mk("UICorner", { CornerRadius = UDim.new(0, 10) }, bbBg)
+	mk("UIStroke", {
+		Color     = ACCENT,
+		Thickness = 1.4,
+		Transparency = 0.3,
+	}, bbBg)
+
+	-- Label nama
+	local nameLabel = mk("TextLabel", {
+		Name       = "NameLabel",
+		Text       = "⟐ " .. LP.Name,
+		Size       = UDim2.new(1, 0, 0, 22),
+		Position   = UDim2.fromOffset(0, 4),
+		BackgroundTransparency = 1,
+		TextColor3 = ACCENT,
+		TextScaled = true,
+		Font       = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Center,
+	}, bbBg) :: TextLabel
+
+	-- Label posisi
+	local posLabel = mk("TextLabel", {
+		Name       = "PosLabel",
+		Text       = "Tile: (0, 0)",
+		Size       = UDim2.new(1, -10, 0, 18),
+		Position   = UDim2.new(0, 5, 0, 28),
+		BackgroundTransparency = 1,
+		TextColor3 = TEXT_COL,
+		TextScaled = true,
+		Font       = Enum.Font.Gotham,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, bbBg) :: TextLabel
+
+	-- Label status
+	local statusLabel = mk("TextLabel", {
+		Name       = "StatusLabel",
+		Text       = "● IDLE",
+		Size       = UDim2.new(1, -10, 0, 18),
+		Position   = UDim2.new(0, 5, 0, 48),
+		BackgroundTransparency = 1,
+		TextColor3 = GRAY_COL,
+		TextScaled = true,
+		Font       = Enum.Font.GothamBold,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, bbBg) :: TextLabel
+
+	-- Tombol minimize billboard
+	local minBtn = mk("TextButton", {
+		Name       = "MinBtn",
+		Text       = "−",
+		Size       = UDim2.fromOffset(20, 20),
+		Position   = UDim2.new(1, -24, 0, 2),
+		BackgroundColor3 = Color3.fromRGB(40,40,60),
+		TextColor3 = TEXT_COL,
+		TextScaled = true,
+		Font       = Enum.Font.GothamBold,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+	}, bbBg) :: TextButton
+	mk("UICorner", { CornerRadius = UDim.new(0, 5) }, minBtn)
+
+	-- ── PANEL KONTROL UTAMA (ScreenGui) ─────────────────────────
+	local sg = mk("ScreenGui", {
+		Name          = GUI_TAG,
+		ResetOnSpawn  = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+	}, LP.PlayerGui) :: ScreenGui
+
+	-- Frame utama — draggable
+	local mainFrame = mk("Frame", {
+		Name            = "Main",
+		Size            = UDim2.fromOffset(300, 310),
+		Position        = UDim2.fromOffset(20, 60),
+		BackgroundColor3 = BG_DARK,
+		BorderSizePixel = 0,
+		Active          = true,
+		Draggable       = true,
+	}, sg) :: Frame
+	mk("UICorner", { CornerRadius = UDim.new(0, 12) }, mainFrame)
+	mk("UIStroke", {
+		Color = ACCENT, Thickness = 1.5, Transparency = 0.2,
+	}, mainFrame)
+
+	-- Topbar
+	local topbar = mk("Frame", {
+		Name            = "Topbar",
+		Size            = UDim2.new(1, 0, 0, 36),
+		BackgroundColor3 = Color3.fromRGB(20, 24, 42),
+		BorderSizePixel = 0,
+	}, mainFrame) :: Frame
+	mk("UICorner", { CornerRadius = UDim.new(0, 12) }, topbar)
+
+	mk("TextLabel", {
+		Text       = "⟐  GentaHax",
+		Size       = UDim2.new(1, -50, 1, 0),
+		Position   = UDim2.fromOffset(12, 0),
+		BackgroundTransparency = 1,
+		TextColor3 = ACCENT,
+		Font       = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, topbar)
+
+	-- Tombol close
+	local closeBtn = mk("TextButton", {
+		Text       = "✕",
+		Size       = UDim2.fromOffset(28, 28),
+		Position   = UDim2.new(1, -34, 0, 4),
+		BackgroundColor3 = Color3.fromRGB(200, 50, 50),
+		TextColor3 = Color3.new(1,1,1),
+		Font       = Enum.Font.GothamBold,
+		TextScaled = true,
+		BorderSizePixel = 0,
+		AutoButtonColor = false,
+	}, topbar) :: TextButton
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, closeBtn)
+
+	-- Content area
+	local content = mk("Frame", {
+		Name            = "Content",
+		Size            = UDim2.new(1, -16, 1, -44),
+		Position        = UDim2.fromOffset(8, 40),
+		BackgroundTransparency = 1,
+		BorderSizePixel = 0,
+	}, mainFrame) :: Frame
+	mk("UIListLayout", {
+		Padding         = UDim.new(0, 8),
+		FillDirection   = Enum.FillDirection.Vertical,
+		SortOrder       = Enum.SortOrder.LayoutOrder,
+	}, content)
+
+	-- ── SECTION: INFO REALTIME ───────────────────────────────────
+	local infoPanel = mk("Frame", {
+		Name            = "InfoPanel",
+		Size            = UDim2.new(1, 0, 0, 56),
+		BackgroundColor3 = BG_PANEL,
+		BorderSizePixel = 0,
+		LayoutOrder     = 1,
+	}, content) :: Frame
+	mk("UICorner", { CornerRadius = UDim.new(0, 8) }, infoPanel)
+
+	local infoPosLabel = mk("TextLabel", {
+		Name       = "PosRT",
+		Text       = "Tile  X: 0   Y: 0",
+		Size       = UDim2.new(1, -10, 0, 22),
+		Position   = UDim2.fromOffset(8, 4),
+		BackgroundTransparency = 1,
+		TextColor3 = TEXT_COL,
+		Font       = Enum.Font.GothamMono,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, infoPanel) :: TextLabel
+
+	local infoStatusLabel = mk("TextLabel", {
+		Name       = "StatusRT",
+		Text       = "Status: IDLE",
+		Size       = UDim2.new(1, -10, 0, 22),
+		Position   = UDim2.new(0, 8, 0, 28),
+		BackgroundTransparency = 1,
+		TextColor3 = GRAY_COL,
+		Font       = Enum.Font.Gotham,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, infoPanel) :: TextLabel
+
+	-- ── SECTION: PNB ────────────────────────────────────────────
+	local pnbPanel = mk("Frame", {
+		Name            = "PNBPanel",
+		Size            = UDim2.new(1, 0, 0, 100),
+		BackgroundColor3 = BG_PANEL,
+		BorderSizePixel = 0,
+		LayoutOrder     = 2,
+	}, content) :: Frame
+	mk("UICorner", { CornerRadius = UDim.new(0, 8) }, pnbPanel)
+
+	mk("TextLabel", {
+		Text       = "PNB — Place & Break",
+		Size       = UDim2.new(1, -10, 0, 20),
+		Position   = UDim2.fromOffset(8, 4),
+		BackgroundTransparency = 1,
+		TextColor3 = ACCENT,
+		Font       = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, pnbPanel)
+
+	-- Input ItemID
+	local pnbItemBox = mk("TextBox", {
+		Name            = "ItemID",
+		PlaceholderText = "Item ID",
+		Text            = "",
+		Size            = UDim2.fromOffset(80, 24),
+		Position        = UDim2.fromOffset(8, 28),
+		BackgroundColor3 = Color3.fromRGB(25, 28, 48),
+		TextColor3      = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font            = Enum.Font.GothamMono,
+		TextScaled      = true,
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+	}, pnbPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, pnbItemBox)
+
+	-- Input Hits
+	local pnbHitsBox = mk("TextBox", {
+		Name            = "Hits",
+		PlaceholderText = "Hits",
+		Text            = "3",
+		Size            = UDim2.fromOffset(55, 24),
+		Position        = UDim2.fromOffset(96, 28),
+		BackgroundColor3 = Color3.fromRGB(25, 28, 48),
+		TextColor3      = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font            = Enum.Font.GothamMono,
+		TextScaled      = true,
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+	}, pnbPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, pnbHitsBox)
+
+	-- Input Delay
+	local pnbMsBox = mk("TextBox", {
+		Name            = "Ms",
+		PlaceholderText = "ms",
+		Text            = "160",
+		Size            = UDim2.fromOffset(55, 24),
+		Position        = UDim2.fromOffset(159, 28),
+		BackgroundColor3 = Color3.fromRGB(25, 28, 48),
+		TextColor3      = TEXT_COL,
+		PlaceholderColor3 = GRAY_COL,
+		Font            = Enum.Font.GothamMono,
+		TextScaled      = true,
+		BorderSizePixel = 0,
+		ClearTextOnFocus = false,
+	}, pnbPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0, 6) }, pnbMsBox)
+
+	local pnbStartBtn = mkBtn("▶ START PNB", UDim2.fromOffset(8, 60),  UDim2.fromOffset(126, 28), GREEN_COL, pnbPanel)
+	local pnbStopBtn  = mkBtn("■ STOP PNB",  UDim2.fromOffset(142, 60), UDim2.fromOffset(120, 28), RED_COL,   pnbPanel)
+
+	-- ── SECTION: FARM AREA ──────────────────────────────────────
+	local farmPanel = mk("Frame", {
+		Name            = "FarmPanel",
+		Size            = UDim2.new(1, 0, 0, 108),
+		BackgroundColor3 = BG_PANEL,
+		BorderSizePixel = 0,
+		LayoutOrder     = 3,
+	}, content) :: Frame
+	mk("UICorner", { CornerRadius = UDim.new(0, 8) }, farmPanel)
+
+	mk("TextLabel", {
+		Text       = "Farm Area  (x1 y1 → x2 y2)",
+		Size       = UDim2.new(1, -10, 0, 20),
+		Position   = UDim2.fromOffset(8, 4),
+		BackgroundTransparency = 1,
+		TextColor3 = ACCENT,
+		Font       = Enum.Font.GothamBold,
+		TextScaled = true,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	}, farmPanel)
+
+	-- Row 1: itemId, x1, y1
+	local farmItemBox = mk("TextBox", {
+		PlaceholderText = "Item ID",
+		Text = "", Size = UDim2.fromOffset(80, 24),
+		Position = UDim2.fromOffset(8, 28),
+		BackgroundColor3 = Color3.fromRGB(25,28,48),
+		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
+		Font = Enum.Font.GothamMono, TextScaled = true,
+		BorderSizePixel = 0, ClearTextOnFocus = false,
+	}, farmPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmItemBox)
+
+	local farmX1Box = mk("TextBox", {
+		PlaceholderText = "x1", Text = "0",
+		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(96, 28),
+		BackgroundColor3 = Color3.fromRGB(25,28,48),
+		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
+		Font = Enum.Font.GothamMono, TextScaled = true,
+		BorderSizePixel = 0, ClearTextOnFocus = false,
+	}, farmPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmX1Box)
+
+	local farmY1Box = mk("TextBox", {
+		PlaceholderText = "y1", Text = "0",
+		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(148, 28),
+		BackgroundColor3 = Color3.fromRGB(25,28,48),
+		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
+		Font = Enum.Font.GothamMono, TextScaled = true,
+		BorderSizePixel = 0, ClearTextOnFocus = false,
+	}, farmPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmY1Box)
+
+	-- Row 2: x2, y2
+	local farmX2Box = mk("TextBox", {
+		PlaceholderText = "x2", Text = "0",
+		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(8, 58),
+		BackgroundColor3 = Color3.fromRGB(25,28,48),
+		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
+		Font = Enum.Font.GothamMono, TextScaled = true,
+		BorderSizePixel = 0, ClearTextOnFocus = false,
+	}, farmPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmX2Box)
+
+	local farmY2Box = mk("TextBox", {
+		PlaceholderText = "y2", Text = "0",
+		Size = UDim2.fromOffset(44, 24), Position = UDim2.fromOffset(60, 58),
+		BackgroundColor3 = Color3.fromRGB(25,28,48),
+		TextColor3 = TEXT_COL, PlaceholderColor3 = GRAY_COL,
+		Font = Enum.Font.GothamMono, TextScaled = true,
+		BorderSizePixel = 0, ClearTextOnFocus = false,
+	}, farmPanel) :: TextBox
+	mk("UICorner", { CornerRadius = UDim.new(0,6) }, farmY2Box)
+
+	local farmStartBtn = mkBtn("▶ FARM", UDim2.fromOffset(112, 55), UDim2.fromOffset(80, 30), GREEN_COL, farmPanel)
+	local farmStopBtn  = mkBtn("■ STOP",  UDim2.fromOffset(200, 55), UDim2.fromOffset(68, 30), RED_COL,   farmPanel)
+
+	-- ── REALTIME UPDATER ─────────────────────────────────────────
+	local function getActiveStatus(): (string, Color3)
+		local active = {}
+		if _tasks["pnb"]  then table.insert(active, "PNB")  end
+		if _tasks["farm"] then table.insert(active, "FARM") end
+		if #active == 0 then
+			return "● IDLE", GRAY_COL
+		end
+		return "● " .. table.concat(active, " + "), GREEN_COL
+	end
+
+	RunSvc.Heartbeat:Connect(function()
+		local p = getPos()
+		local px = tostring(p.x)
+		local py = tostring(p.y)
+
+		local statusTxt, statusCol = getActiveStatus()
+
+		-- Billboard update
+		posLabel.Text    = "Tile: (" .. px .. ", " .. py .. ")"
+		statusLabel.Text = statusTxt
+		statusLabel.TextColor3 = statusCol
+
+		-- ScreenGui update
+		infoPosLabel.Text = "Tile  X: " .. px .. "   Y: " .. py
+		infoStatusLabel.Text = "Status: " .. (statusTxt:gsub("● ", ""))
+		infoStatusLabel.TextColor3 = statusCol
+	end)
+
+	-- ── BUTTON LOGIC ─────────────────────────────────────────────
+	pnbStartBtn.MouseButton1Click:Connect(function()
+		local id    = tonumber(pnbItemBox.Text)
+		local hits  = tonumber(pnbHitsBox.Text) or 3
+		local ms    = tonumber(pnbMsBox.Text) or 160
+		if not id then return end
+		pnb(id, 0, 1, hits, ms)
+	end)
+
+	pnbStopBtn.MouseButton1Click:Connect(function()
+		stopPNB()
+	end)
+
+	farmStartBtn.MouseButton1Click:Connect(function()
+		local id = tonumber(farmItemBox.Text)
+		local x1 = tonumber(farmX1Box.Text) or 0
+		local y1 = tonumber(farmY1Box.Text) or 0
+		local x2 = tonumber(farmX2Box.Text) or 0
+		local y2 = tonumber(farmY2Box.Text) or 0
+		if not id then return end
+		farmArea(id, x1, y1, x2, y2, 3, 160)
+	end)
+
+	farmStopBtn.MouseButton1Click:Connect(function()
+		stopFarm()
+	end)
+
+	-- Close / hide
+	closeBtn.MouseButton1Click:Connect(function()
+		TweenSvc:Create(mainFrame, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+			Size = UDim2.fromOffset(300, 0),
+		}):Play()
+		task.delay(0.2, function() mainFrame.Visible = false end)
+	end)
+
+	-- Billboard minimize toggle
+	local bbVisible = true
+	minBtn.MouseButton1Click:Connect(function()
+		bbVisible = not bbVisible
+		bbBg.Visible = bbVisible
+		minBtn.Text = bbVisible and "−" or "+"
+	end)
+
+	-- Respawn rebuild
+	LP.CharacterAdded:Connect(function()
+		task.delay(2, buildGui)
+	end)
+end
+
+-- ══════════════════════════════════════════════════════════════════
+-- BOOT
+-- ══════════════════════════════════════════════════════════════════
+
+task.spawn(buildGui)
+
+-- END
